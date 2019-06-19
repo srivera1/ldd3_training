@@ -90,6 +90,11 @@ The folders are divided per chapter and, in every one of them, there should be a
     * SWITCH_01: in the reality I am working with buttons and not with switches. In this example I enable the interrupts in Linux, I setup the hardware in order to trigger an interrupt and we can go inside the function _SWITCH_01_interrupt()_ that is our interrupt handler. Here there is a disable interrupt and a clean bit of the interrupt occurred.
         * TODO: debouce HW and/or SW
         * TODO: spinlock and semaphore to protect the atomic part of the code.
+11. FPGA: **FPGA applications**
+    * kernel driver for mapping BRAM memory on the PL side from the Zynq SoC.
+    * It "kmallocates" contiguous memory on the kernel side (useful for accessing it with DMA if a more advanced version of the driver).
+    * Tested on ZCU102 and PYNQ boards with kernels 4.9 and 4.14.
+        * TODO: control of the available amount of memory free at the kernel space.
 
 
 [1]: https://free-electrons.com/doc/books/ldd3.pdf
