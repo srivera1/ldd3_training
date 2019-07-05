@@ -18,7 +18,7 @@ kernel drivers for trainning how to access digital hardware at the PL side from 
     * This driver has been shown to transfer data between about 130 and 400 MB/s, depending on the frequency/parameters combination at the CDMA.
     * Tested now only in PYNQ board kernel 4.14.
 
-####Using the driver
+## Using the driver
 ##### A) FPGA HW 
                 
 + I) First thing needed is a place from which read/write. For example, an HLS/RTL IP with some registers with known offsets address.
@@ -112,7 +112,24 @@ kernel drivers for trainning how to access digital hardware at the PL side from 
 ```
 ##### B) Driver preparation
 
+  + I) I will asume that the FPGA board has the 
+  + II) clone this repo:
+
+```console
+  $ git clone https://github.com/srivera1/ldd3_training.git
+```
+  + III) Since the changes are not (yet) at master:
+
+```console
+  $ git checkout FPGA_kernel
+```
+  + VI) We would like to write and read some kB to a particular address with DMA. To keep things simpler, we are reading and writing from the same address:
+```console
+  $  cd FPGA/CDMA/
+```
   
   
+  
+  please, send any amount of money, correction, comment... to srivera(at)alumnos.upm.es
 
 ###End
