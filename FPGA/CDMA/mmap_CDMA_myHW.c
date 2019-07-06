@@ -44,23 +44,27 @@
  * 
  * Data path:
  * 
- *                              +---------+       +---------+
- *                        write |         |       |         |
- *                      +------>+  *ptr   +------>-----+    |
- *                      |       |         |     a |    |    |
- *                      |       |         |       |    |    |
- * /dev/hwchar +--------+       |   RAM   |       |  MY|HW  |
- *                      ^       |         |       |    |    |
- *                      |       |         |       |    |    |
- *                      | read  |         |       |    |    |
- *                      +-------+         +<-----------<    |
- *                              |         |     b |         |
- *                              +---------+       +---------+
+ *                              +----------+       +---------+
+ *                        write |          |       |         |
+ *                      +------>+  *ptr    +------>-----+    |
+ *                      |       |          |     a |    |    |
+ *                      |       |          |       |    |    |
+ * /dev/hwchar +--------+       |   RAM    |       |  MY|HW  |
+ *                      ^       |          |       |    |    |
+ *                      |       |          |       |    |    |
+ *                      | read  |          |       |    |    |
+ *                      +-------+ *(ptr+4) +<-----------<    |
+ *                              |          |     b |         |
+ *                              +----------+       +---------+
  * 
  * performance with the a burst size of 2 (the smallest):
  *   HW_transfered(131072 bytes), read time (ns): 986650 ->  132.845 MB/s
  *   HW_transfered(60000 bytes), write time (ns): 453879 ->  132.194 MB/s
  *   HW_transfered(60000 bytes), read  time (ns): 453958 ->  132.170 MB/s
+ * 
+ * with burst size = 256:
+ *   HW_transfered(128000 bytes), read  time (ns): 324062 ->  394.986 MB/s
+ *   HW_transfered(256000 bytes), read  time (ns): 643468 ->  397.844 MB/s
  * 
  * 
  * 
@@ -81,19 +85,18 @@
 #include <asm/io.h>
 #include <linux/dma-mapping.h>
 
-#define dataLength  (unsigned long)1535000  // available bram byte
+#define dataLength  (unsigned long)512000  // available bram byte
 #define MAX_SIZE dataLength   /* max size mmaped to userspace */
 
 #define DEVICE_NAME "hwchar"
 #define  CLASS_NAME "mogu"
 
-
-#define a_BASE_ADDRESS          0x80040000  // a address as seen from PS
-#define b_BASE_ADDRESS          0x80140000  // b address as seen from PS
-#define a_CDMA_ADDRESS          0x44A40000  // a address as seen from CDMA
-#define b_CDMA_ADDRESS          0x44B40000  // b address as seen from CDMA
+// addresses should match your HW
+#define a_BASE_ADDRESS          0xa0000000  // a address as seen from PS
+#define b_BASE_ADDRESS          0xa0000000  // b address as seen from PS
+#define a_CDMA_ADDRESS          0xa0000000  // a address as seen from CDMA
+#define b_CDMA_ADDRESS          0xa0000000  // b address as seen from CDMA
 #define CDMA_BASE_ADDRESS       0x7E200000      
-#define MYIP_BASE_ADDRESS       0x43C00000      
 
 #define XAXICDMA_CR_OFFSET          0x00000000  /**< Control register */
 #define XAXICDMA_SR_OFFSET          0x00000004  /**< Status register */
@@ -164,55 +167,13 @@ void __iomem *regs;
  */ 
 static void cdma_write( int len, unsigned long SRC, unsigned long DST ) {
     volatile unsigned long RegValue = 0;
-	iowrite32((unsigned long) SRC , ((volatile unsigned long *) (regs + XAXICDMA_SRCADDR_OFFSET)));
-	iowrite32((unsigned long) DST , ((volatile unsigned long *) (regs + XAXICDMA_DSTADDR_OFFSET)));
-	iowrite32((unsigned long) len , ((volatile unsigned long *) (regs + XAXICDMA_BTT_OFFSET    )));
+    iowrite32((unsigned long) SRC , ((volatile unsigned long *) (regs + XAXICDMA_SRCADDR_OFFSET)));
+    iowrite32((unsigned long) DST , ((volatile unsigned long *) (regs + XAXICDMA_DSTADDR_OFFSET)));
+    iowrite32((unsigned long) len , ((volatile unsigned long *) (regs + XAXICDMA_BTT_OFFSET    )));
     do {
-		RegValue = (u32)ioread32(((volatile unsigned long *) (regs + XAXICDMA_SR_OFFSET)));
-	} while (!(RegValue & XAXICDMA_SR_IDLE_MASK));
+        RegValue = (u32)ioread32(((volatile unsigned long *) (regs + XAXICDMA_SR_OFFSET)));
+    } while (!(RegValue & XAXICDMA_SR_IDLE_MASK));
  }
-
-/* copy from kernel space alocated memory to HW.
- *
- */
-static void HW_write(int len, unsigned long INPUT_BASE_ADDRESS) {
-    union data x;
-    x.u=0;
-    void __iomem *regs = ioremap_nocache(INPUT_BASE_ADDRESS,0x40);
-    int i = 0;
-    while(i < len/4) {
-      x.u=0;
-      x.c[0] = *( sh_mem + 4 * i + 0 );
-      x.c[1] = *( sh_mem + 4 * i + 1 );
-      x.c[2] = *( sh_mem + 4 * i + 2 );
-      x.c[3] = *( sh_mem + 4 * i + 3 );
-      iowrite32(x.u ,regs+i*4);
-      i++;
-    }
-    iounmap(INPUT_BASE_ADDRESS);
-
-}
-
-/* copy from HW to kernel space alocated memory.
- *
- */
-static void HW_read(int len, unsigned long INPUT_BASE_ADDRESS){
-    union data x;
-    x.u=0;
-    void __iomem *regs = ioremap_nocache(INPUT_BASE_ADDRESS,0x4);
-    int i = 0;
-    while(i < len/4) {
-      x.u=(u32)ioread32(regs+i*4);
-      *( sh_mem + 4 * i + 0 ) = x.c[0];
-      *( sh_mem + 4 * i + 1 ) = x.c[1];
-      *( sh_mem + 4 * i + 2 ) = x.c[2];
-      *( sh_mem + 4 * i + 3 ) = x.c[3];
-      i++;
-    }
-    iounmap(INPUT_BASE_ADDRESS);
-
-}
-
 
 /*  executed once the device is closed or releaseed by userspace
  *  @param inodep: pointer to struct inode
@@ -270,16 +231,16 @@ out:
 static ssize_t hwchar_read(struct file *filep, char *buffer, size_t len, loff_t *offset)
 {
     int ret;
-    //printk(KERN_ALERT "HW_read()....");
     struct timespec beginR, endR, diffR;
     getnstimeofday (&beginR);
 
-    cdma_write( (int) len, (unsigned long) b_CDMA_ADDRESS, (unsigned long) (sh_mem_phys ) );
-    //cdma_write( (int) len/2, (unsigned long) sh_mem_phys,             (unsigned long) a_CDMA_ADDRESS );
-    //HW_read(len);          // <----------------------------
+   /* since RAM is writen from user space at address *sh_mem_phys to later be sent to the HW,
+      when we read from the HW we write RAM at *(sh_mem_phys + 4). This allow us to check
+      if we are actually using DMA in case that we read/write same thing to the HW: data will
+      be shifted 4 bytes in RAM after the transference */
+    cdma_write( (int) len, (unsigned long) b_CDMA_ADDRESS, (unsigned long) (sh_mem_phys + 4 ) );
 
     getnstimeofday (&endR);
-    //pr_info("total time read: ----------", len);
     print_nanos_len(len, timespec_sub(endR, beginR));
 
     if (len > MAX_SIZE) {
@@ -289,8 +250,7 @@ static ssize_t hwchar_read(struct file *filep, char *buffer, size_t len, loff_t 
         goto out;
     }
 
-    if (raw_copy_to_user(buffer, sh_mem , len) == 0) {
-        //pr_info("hwchar: copy %u char to the user\n", len);
+    if (raw_copy_to_user(buffer, sh_mem + 4 , len) == 0) {
         ret = len;
 
     } else {
@@ -302,27 +262,23 @@ out:
 }
 
 static int reserve_buffer(void ) {
-    pr_info("1\n");
     int id;
     size_t size;
     dma_addr_t paddr;
-    pr_info("2\n");
-    pr_info("3\n");
+
     sh_mem = (char *)dma_alloc_coherent(NULL, MAX_SIZE, &paddr, GFP_KERNEL); // FP_ATOMIC|GFP_DMA
     sh_mem_phys = virt_to_phys(sh_mem);
-    pr_info("4\n");
+
     if (sh_mem == NULL)
     {
         printk(KERN_ERR "ERROR: Allocation failure (sh_mem %p).\n", sh_mem);
         return(-1);
     }
-    pr_info("5\n");
     return(0);
 }
 
 static ssize_t hwchar_write(struct file *filep, const char *buffer, size_t len, loff_t *offset) {
     int ret;
-    
     
     if (raw_copy_from_user(sh_mem, buffer, len)) {
         pr_err("hwchar: write fault!\n");
@@ -330,25 +286,15 @@ static ssize_t hwchar_write(struct file *filep, const char *buffer, size_t len, 
         goto out;
     }
 
-    //pr_info("hwchar: copy %d char from the user\n", len);
     ret = len;
 
-    //printk(KERN_ALERT "HW_write()....");
     struct timespec begin, end, diff;
     getnstimeofday (&begin);
     
     cdma_write( (int) len, (unsigned long) sh_mem_phys, (unsigned long) a_CDMA_ADDRESS );
-    //cdma_write( (int) len/2, (unsigned long) sh_mem_phys+(int) len/2, (unsigned long) b_CDMA_ADDRESS );
-            // <---------------------------- acceso a HW con DMA
 
     getnstimeofday (&end);
-    //pr_info("total time write: ----------", len);
     print_nanos_len(len, timespec_sub(end, begin));
-
-    //getnstimeofday (&begin);
-    //HW_write(len);          // <---------------------------- acceso a HW sin DMA
-    //getnstimeofday (&end);
-    //print_nanos_len(len, timespec_sub(end, begin));
 
 out:
     return ret;
@@ -367,12 +313,9 @@ static int __init hwchar_init(void) {
     int ret = 0;    
     
     regs = ioremap_nocache(CDMA_BASE_ADDRESS,0x4);
-    struct timespec begin, end, begin0;
-    getnstimeofday (&begin0);
     u32 RegValue = 0;
     int TimeOut = 1;
 /* init CDMA configuration  */
- //1) Reset CDMA
     do {
         ResetMask = (unsigned long) XAXICDMA_CR_RESET_MASK;
         iowrite32((unsigned long) ResetMask     , ( (regs + XAXICDMA_CR_OFFSET    )));
@@ -381,30 +324,20 @@ static int __init hwchar_init(void) {
         if (!(ResetMask & XAXICDMA_CR_RESET_MASK)) { break; }
            TimeOut -= 1;
     } while (TimeOut);
-    getnstimeofday (&end);
-    printk ("1 - ");print_nanos(timespec_sub(end, begin0));
-    getnstimeofday (&begin);
  //2) enable Interrupt
     RegValue = (u32)ioread32(((volatile unsigned long *) (regs + XAXICDMA_CR_OFFSET)));
     RegValue = (unsigned long) (RegValue | XAXICDMA_XR_IRQ_ALL_MASK);
     iowrite32((unsigned long) RegValue          , ((volatile unsigned long *) (regs + XAXICDMA_CR_OFFSET    )));
-    getnstimeofday (&end);
-    printk ("2 - ");print_nanos(timespec_sub(end, begin0));
-    getnstimeofday (&begin);
  //3) Checking for the Bus Idle
     RegValue = (u32)ioread32(((volatile unsigned long *) (regs + XAXICDMA_SR_OFFSET)));
     if (!(RegValue & XAXICDMA_SR_IDLE_MASK)) {
         printk("BUS IS BUSY Error Condition \n\r");
         return 1;
     }
-    getnstimeofday (&end);
-    printk ("3 - ");print_nanos(timespec_sub(end, begin0));
-    getnstimeofday (&begin);
  //4) Check the DMA Mode and switch it to simple mode
     RegValue = (u32)ioread32(((volatile unsigned long *) (regs + XAXICDMA_CR_OFFSET)));
     if ((RegValue & XAXICDMA_CR_SGMODE_MASK)) {
         RegValue = (unsigned long) (RegValue & (~XAXICDMA_CR_SGMODE_MASK));
-        printk("Reading \n \r");
         iowrite32((unsigned long) RegValue      , ((volatile unsigned long *) (regs + XAXICDMA_CR_OFFSET)));
     }
 /* end CDMA configuration   */
@@ -439,23 +372,14 @@ static int __init hwchar_init(void) {
 
     printk(KERN_INFO "mapping memory to device /dev/hwchar \n");
 
-    /* init this mmap area */
-    //sh_mem = dma_alloc_coherent(); // GFP_DMA -> contiguous physical memory
-
-
-    printk("7.0\n");
-    //sh_mem = kmalloc(MAX_SIZE, GFP_ATOMIC|GFP_DMA); // GFP_DMA -> Kmalloc contiguous physical memory
     reserve_buffer(); // dma_alloc_coherent contiguous physical memory
 
-    printk("7\n");
     if (sh_mem == NULL) {
         ret = -ENOMEM; 
         printk("8\n");
         goto out;
     }
-    printk("9\n");
     
-    // printk("memory allocated: %d\n", ksize(sh_mem));
     mutex_init(&hwchar_mutex);
 out: 
     return ret;
@@ -472,7 +396,6 @@ static void __exit hwchar_exit(void) {
     unregister_chrdev(major, DEVICE_NAME);
     iounmap(CDMA_BASE_ADDRESS);
     
-    //kfree(sh_mem);
     sh_mem=NULL; // ->  NULL pointer dereference 
 
     pr_info("hwchar: unregistered!");
@@ -481,3 +404,6 @@ static void __exit hwchar_exit(void) {
 module_init(hwchar_init);
 module_exit(hwchar_exit);
 MODULE_LICENSE("GPL");
+MODULE_AUTHOR("sergio rivera <srivera@alumnos.upm.es>");
+MODULE_DESCRIPTION("DMA for ZYNQ");
+MODULE_VERSION("1.0");

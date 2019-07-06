@@ -2,12 +2,12 @@
 
 ## Introduction
 
-kernel drivers for trainning how to access digital hardware at the PL side from a ZYNQ SoC.
+kernel drivers for training how to access digital hardware at the PL side from a ZYNQ SoC.
 
 ## FPGA applications
 
 1. FPGA: **BRAM**
-    * kernel driver for mapping BRAM memory at the PL side from the Zynq SoC.
+    * kernel driver for mapping (as BRAM) memory at the PL side from the Zynq SoC.
     * It "kmallocates" contiguous memory on the kernel side.
     * At HW project folder, there are sample Vivado 2017.4 projects
     * Tested on ZCU102 and PYNQ boards with kernels 4.9 and 4.14.
@@ -15,14 +15,14 @@ kernel drivers for trainning how to access digital hardware at the PL side from 
 2. FPGA: **CDMA memory access**
     * kernel driver for mapping memory at the PL side of the Zynq SoC with DMA.
     * It uses dma_alloc_coherent() to allocate contiguous memory on the kernel side and transfers it with DMA.
-    * This driver has been shown to transfer data between about 130 and 400 MB/s, depending on the frequency/parameters combination at the CDMA.
-    * Tested now only in PYNQ board kernel 4.14.
+    * This driver has shown to transfer data between about 130 and 400 MB/s, depending on the frequency/parameters combination at the CDMA.
+    * Tested now only in PYNQ board, kernel 4.14.
 
 ## Using the driver
 ##### A) FPGA HW 
                 
 + I) First thing needed is a place from which read/write. For example, an HLS/RTL IP with some registers with known offsets address.
-  + If we have created an IP in Vivado_hls, on which a variable has an associated input/output port, in this port, the variable will have some given offset. The most common case is the control port of the ip, for which one can use an axi interface. In this case, the default given offsets use to look like:
+  + If we have created an IP in Vivado_hls, on which a variable has an associated input/output port, in this port, the variable will have some given offset. The most common case is the control port of the IP, for which one can use an axi interface. In this case, the default given offsets use to look like:
 
 ```default
 
@@ -51,7 +51,7 @@ kernel drivers for trainning how to access digital hardware at the PL side from 
 -- (SC = Self Clear, COR = Clear on Read, TOW = Toggle on Write, COH = Clear on Handshake)
 
 ```
-  + For each created port there is a file with the name "IPname_PortName_BusType.vhd" (example: neural_control_s_axi.vhd) where we can find the offset of our variables. This offset is important, because it must be added to the address of the port for correct accesing to the internal variables.
+  + For each created port there is a file with the name "IPname_PortName_BusType.vhd" (example: neural_control_s_axi.vhd) where we can find the offset of our variables. This offset is important because it must be added to the address of the port for correct accessing to the internal variables.
                 
 				
 ![](https://github.com/srivera1/ldd3_training/raw/FPGA_kernel/FPGA/media/HLS_vhd.png)
@@ -67,7 +67,7 @@ kernel drivers for trainning how to access digital hardware at the PL side from 
 > Inserting the IP to the Vivado project
 
 				
-  + After conecting all the clks, resets, busses, etc., one must take care of the addresses from the IP.
+  + After connecting all the clocks, resets, busses, etc., one must take care of the addresses from the IP.
   
                   
 				
@@ -91,7 +91,7 @@ kernel drivers for trainning how to access digital hardware at the PL side from 
 
 				
 				
-  + IV) Copy a operative system to a SD, insert the card to the FPGA board, power on it.
+  + IV) Copy an operative system to an SD, insert the card to the FPGA board, power on it.
 				
   + V) Send the bitstream to the FPGA. In my usual configuration, at localhost I like to do,
 ```console
@@ -112,7 +112,8 @@ kernel drivers for trainning how to access digital hardware at the PL side from 
 ```
 ##### B) Driver preparation
 
-  + I) I will asume that the FPGA board has the 
+  + I) I will assume that the FPGA board has the kernel sources, [linux-xlnx](https://github.com/Xilinx/linux-xlnx) located in its file system. You may pre-crosscompile a matching kernel version and upload it to the board. (I find to be faster while developing directly on board).
+
   + II) clone this repo:
 
 ```console
@@ -122,14 +123,61 @@ kernel drivers for trainning how to access digital hardware at the PL side from 
 
 ```console
   $ git checkout FPGA_kernel
-```
-  + VI) We would like to write and read some kB to a particular address with DMA. To keep things simpler, we are reading and writing from the same address:
-```console
   $  cd FPGA/CDMA/
 ```
-  
-  
-  
-  please, send any amount of money, correction, comment... to srivera(at)alumnos.upm.es
+  + IV) On a second console, execute and keep it in sight:
 
-###End
+```console
+  $ dmesg -w
+```
+  + V) We would like to write and read some kB to a particular contiguous memory address with DMA. To keep things simpler, we are reading and writing from the same address. In the driver (mmap_CDMA_myHW.c) we define the HW addresses and the amount of allocated memory at kernel space:
+
+```c
+#define dataLength  (unsigned long)512000  // available memory
+#define MAX_SIZE dataLength   /* max size mmaped to userspace */
+
+...
+
+// addresses should match your HW
+#define a_BASE_ADDRESS          0xa0000000  // a address as seen from PS
+#define b_BASE_ADDRESS          0xa0000000  // b address as seen from PS
+#define a_CDMA_ADDRESS          0xa0000000  // a address as seen from CDMA
+#define b_CDMA_ADDRESS          0xa0000000  // b address as seen from CDMA
+#define CDMA_BASE_ADDRESS       0x7E200000      
+```
+
+![](https://github.com/srivera1/ldd3_training/raw/FPGA_kernel/FPGA/media/data_path.png)
+
+> Data path when reading/writing to the device
+
+  + VI) Also at the user space application (RW_to_HW.c):
+
+
+```c
+#define a_BASE_ADDRESS          0xa0000000
+#define b_BASE_ADDRESS          0xa0000000
+```
+  
+  + VII) Driver and application compilation
+
+```console
+$ make
+$ sudo insmod mmap_CDMA_myHW.ko
+$ gcc -Wall RW_to_HW.c -o test; sudo ./test 
+```
+
+  + VIII) check dmesg -w output:
+
+```console
+[ 4049.139134] HW_transfered(256000 bytes), read time (ns): 643446
+[ 4063.611574] hwchar: Device opened
+[ 4063.611588] MAX_SIZE: 512000 
+[ 4063.612721] HW_transfered(256000 bytes), read time (ns): 643665
+[ 4063.613118] hwchar: Device opened
+[ 4063.613127] MAX_SIZE: 512000 
+```
+
+
+
+  please, send any amount of money, corrections, comments... to srivera(at)alumnos.upm.es
+
