@@ -177,7 +177,41 @@ $ gcc -Wall RW_to_HW.c -o test; sudo ./test
 [ 4063.613127] MAX_SIZE: 512000 
 ```
 
+  + IX) test the driver:
 
+```console
+$ mkdir q                                                   # create a folder
+$ sudo mount -t tmpfs -o size=20M tmpfs q                   # mount 20M of RAM on q
+$ sudo dd if=/dev/zero of=q/zeros.bin bs=256000 count=1     # file with 256000 bytes
+$ sudo dd of=/dev/hwchar if=q/zeros.bin bs=256000 count=1   # send 256000 zero bytes with DMA
+$ sudo ~/tfm/drivers/gp -g 0xa0000008 -o1010                # modify any memory address (i) with GP (*)
+$ sudo ~/tfm/drivers/gp -g 0xa003e7f8 -o1010                # modify any memory address (ii) with GP
+$ sudo dd of=q/hwout_z.bin if=/dev/hwchar bs=256000 count=1 # read 256000 bytes with DMA (memory map)
+$ xxd q/hwout_z.bin > qq                                    # binary to ascii
+$ xxd q/zeros.bin > qz                                      # binary to ascii
+$ diff qq qz                                                # check memory map differences
+1c1
+< 00000000: 0000 0000 0000 0000 f203 0000 0000 0000  ................
+---
+> 00000000: 0000 0000 0000 0000 0000 0000 0000 0000  ................
+16000c16000
+< 0003e7f0: 0000 0000 0000 0000 f203 0000 0000 0000  ................
+---
+> 0003e7f0: 0000 0000 0000 0000 0000 0000 0000 0000  ................
+
+$ vim qq                                                    # check the hole memory map
+
+00000000: 0000 0000 0000 0000 f203 0000 0000 0000  ................
+00000010: 0000 0000 0000 0000 0000 0000 0000 0000  ................
+
+...
+
+0003e7e0: 0000 0000 0000 0000 0000 0000 0000 0000  ................
+0003e7f0: 0000 0000 0000 0000 f203 0000 0000 0000  ................
+
+```
+
+(*) my version of [gpio-dev-mem-test.c](https://github.com/srivera1/ldd3_training/blob/master/utilities/test_gpio_userspace/gpio-dev-mem-test.c)
 
   please, send any amount of money, corrections, comments... to srivera(at)alumnos.upm.es
 
