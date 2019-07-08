@@ -1,8 +1,8 @@
-# FPGA additions to ldd3 Training -Linux Device Drivers- 
+# DMA drivers
 
 ## Introduction
 
-kernel drivers for training how to access digital hardware at the PL side from a ZYNQ SoC.
+In this section, examples of device driver to hadle a DMA to pass data from the PS to the PL are proposed.
 
 ## FPGA applications
 
