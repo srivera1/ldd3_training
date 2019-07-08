@@ -2,7 +2,7 @@
 
 ## Introduction
 
-In this section, examples of device driver to hadle a DMA to pass data from the PS to the PL are proposed.
+In this section, examples of device driver to hadle a DMA to pass data from/to the PS to/from the PL are proposed.
 
 ## FPGA applications
 
